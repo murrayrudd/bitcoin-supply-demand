@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitcoin Supply-Demand Price Model</title>
+<meta name="description" content="Interactive Epstein-Zin supply-demand framework for Bitcoin price formation. Explore how demand growth, time preferences, and withdrawal behavior shape price trajectories.">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080d17;color:#e2e8f0;font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif}
+input[type=range]{-webkit-appearance:none;appearance:none;height:5px;background:#1c2740;border-radius:3px;outline:none;cursor:pointer;transition:background .2s}
+input[type=range]:hover{background:#2a3a52}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#f7931a;cursor:pointer;box-shadow:0 0 8px rgba(247,147,26,.35);transition:transform .15s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#f7931a;cursor:pointer;border:none}
+.tab-btn{padding:7px 14px;border:1px solid #1c2740;background:transparent;color:#5a6b82;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;cursor:pointer;transition:all .2s;letter-spacing:.03em;border-right:none}
+.tab-btn:last-child{border-right:1px solid #1c2740;border-radius:0 6px 6px 0}
+.tab-btn:first-child{border-radius:6px 0 0 6px}
+.tab-btn.active{background:rgba(247,147,26,.12);color:#f7931a;border-color:#f7931a}
+.tab-btn.active+.tab-btn{border-left-color:#f7931a}
+.tab-btn:hover:not(.active){background:rgba(255,255,255,.03);color:#e2e8f0}
+.reset-btn{padding:6px 14px;background:transparent;border:1px solid #1c2740;color:#5a6b82;font-family:'JetBrains Mono',monospace;font-size:10px;border-radius:5px;cursor:pointer;transition:all .2s;letter-spacing:.05em}
+.reset-btn:hover{border-color:#f7931a;color:#f7931a;background:rgba(247,147,26,.12)}
+.section-label{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#5a6b82;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px;padding-bottom:6px;border-bottom:1px solid #1c2740}
+.header-accent{height:3px;background:linear-gradient(90deg,#f7931a 0%,#e2720a 40%,transparent 100%);border-radius:2px;margin-top:12px;width:180px}
+.stat-card{transition:border-color .2s}
+.stat-card:hover{border-color:rgba(247,147,26,.3)!important}
+.chart-container{transition:box-shadow .3s}
+.chart-container:hover{box-shadow:0 0 30px rgba(247,147,26,.06)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo,useCallback}=React;
+const {LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ComposedChart}=Recharts;
+
+const T0_DATE=new Date(2024,3,20),P0=64858,Q_MINED_T0=19687500,T_END_DAYS=4379,BLOCKS_PER_DAY=144;
+const HALVINGS=[{day:0,reward:3.125},{day:1458,reward:1.5625},{day:2917,reward:0.78125},{day:4375,reward:0.390625}];
+const mono="'JetBrains Mono','SF Mono','Fira Code',monospace";
+
+function getDailyEmissions(di){let r=3.125;for(const h of HALVINGS)if(di>=h.day)r=h.reward;return r*BLOCKS_PER_DAY}
+function fmtDate(di){const d=new Date(T0_DATE);d.setDate(d.getDate()+di);return d.toLocaleDateString("en-US",{month:"short",year:"numeric"})}
+function fmtDateFull(di){const d=new Date(T0_DATE);d.setDate(d.getDate()+di);return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+function fmtPrice(v){if(v>=1e9)return`$${(v/1e9).toFixed(2)}B`;if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;if(v>=1e3)return`$${(v/1e3).toFixed(0)}K`;return`$${v.toFixed(0)}`}
+function fmtMcap(v){if(v>=1e15)return`$${(v/1e15).toFixed(1)}Q`;if(v>=1e12)return`$${(v/1e12).toFixed(1)}T`;if(v>=1e9)return`$${(v/1e9).toFixed(1)}B`;return`$${v.toFixed(0)}`}
+
+function computeAdoption(Tstar,Lmin,D){
+  const Lmax=1-Lmin,totalDays=Tstar*365,ti=totalDays/2;
+  const r=(Math.log(1/Lmin-1)-Math.log(1/Lmax-1))/totalDays;
+  const pts=[];
+  for(let t=0;t<=T_END_DAYS;t++){
+    const g=1/(1+Math.exp(-r*(t+1-ti)));
+    const Ap=1+((D-1)/(Lmax-Lmin))*(g-Lmin);
+    pts.push({t,gamma_t:g,Aprime:Ap});
+  }
+  return pts;
+}
+
+function runSim({D,rho,qBase,alpha,satoshi,lost,illiquid,Tstar,Lmin}){
+  let liq=Math.max(1e6,Math.min(16.5e6,Q_MINED_T0-satoshi-illiquid-lost));
+  const initLiq=liq,demandBase=Q_MINED_T0-illiquid-satoshi;
+  const adopt=computeAdoption(Tstar,Lmin,D);
+  const priceData=[],flowData=[];
+  let price=P0,prev=P0,milDate=null,cumMine=0,cumWith=0;
+  for(let t=0;t<=T_END_DAYS;t++){
+    const Ap=adopt[t].Aprime;
+    if(liq>100)price=Ap*P0*Math.pow(demandBase/liq,1/rho);
+    const cap=Math.min(price,1e10);
+    if(!milDate&&price>=1e6)milDate=t;
+    const em=getDailyEmissions(t);
+    let qR=0;
+    if(t>0){qR=qBase/(1+alpha*Math.max(0,prev/P0-1))}
+    cumMine+=em;cumWith+=qR;
+    liq=Math.max(0,liq+em-qR);
+    prev=price;
+    if(t%15===0||t===T_END_DAYS){
+      const ts=Q_MINED_T0+cumMine;
+      priceData.push({day:t,date:fmtDate(t),dateFull:fmtDateFull(t),price:cap,priceRaw:price,liquidSupply:liq/1e6,marketCap:price*ts});
+      flowData.push({day:t,date:fmtDate(t),dateFull:fmtDateFull(t),emissions:em,qReserve:qR,netFlow:em-qR,liquidSupply:liq/1e6});
+    }
+  }
+  const fp=priceData[priceData.length-1]?.priceRaw||0;
+  const cagr=(Math.pow(fp/P0,1/(T_END_DAYS/365))-1)*100;
+  const fl=priceData[priceData.length-1]?.liquidSupply||0;
+  const te=Q_MINED_T0+cumMine;
+  const adoptData=[];
+  for(let t=0;t<=T_END_DAYS;t+=30)adoptData.push({day:t,date:fmtDate(t),dateFull:fmtDateFull(t),gamma:adopt[t].gamma_t,Aprime:adopt[t].Aprime});
+  return{priceData,supplyFlowData:flowData,adoptionData:adoptData,finalPrice:fp,cagr,finalLiquid:fl,finalMcap:fp*te,millionDate:milDate,initialLiquid:initLiq/1e6};
+}
+
+function Slider({label,sublabel,value,min,max,step,onChange,format}){
+  return React.createElement("div",{style:{marginBottom:18}},
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}},
+      React.createElement("div",null,
+        React.createElement("span",{style:{fontFamily:mono,fontSize:13,fontWeight:600,color:"#e2e8f0",letterSpacing:".02em"}},label),
+        sublabel&&React.createElement("span",{style:{fontSize:11,color:"#5a6b82",marginLeft:8,fontStyle:"italic"}},sublabel)
+      ),
+      React.createElement("span",{style:{fontFamily:mono,fontSize:14,fontWeight:700,color:"#f7931a",minWidth:80,textAlign:"right"}},format?format(value):value)
+    ),
+    React.createElement("input",{type:"range",min,max,step,value,onChange:e=>onChange(parseFloat(e.target.value)),style:{width:"100%",accentColor:"#f7931a"}}),
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"#5a6b82",marginTop:2,fontFamily:mono}},
+      React.createElement("span",null,format?format(min):min),
+      React.createElement("span",null,format?format(max):max)
+    )
+  );
+}
+
+function Stat({label,value,sub}){
+  return React.createElement("div",{className:"stat-card",style:{background:"#0f1520",border:"1px solid #1c2740",borderRadius:8,padding:"12px 14px",flex:1,minWidth:130}},
+    React.createElement("div",{style:{fontSize:10,color:"#5a6b82",textTransform:"uppercase",letterSpacing:".08em",marginBottom:3,fontFamily:mono}},label),
+    React.createElement("div",{style:{fontSize:18,fontWeight:700,color:"#e2e8f0",fontFamily:mono}},value),
+    sub&&React.createElement("div",{style:{fontSize:10,color:"#5a6b82",marginTop:2}},sub)
+  );
+}
+
+function ChartTip({active,payload}){
+  if(!active||!payload?.[0])return null;
+  const d=payload[0].payload;
+  return React.createElement("div",{style:{background:"#1a2332",border:"1px solid #1c2740",borderRadius:6,padding:"10px 14px",fontFamily:mono,fontSize:11,boxShadow:"0 4px 24px rgba(0,0,0,.4)"}},
+    React.createElement("div",{style:{fontWeight:600,marginBottom:4,color:"#e2e8f0"}},d.dateFull),
+    d.priceRaw!==undefined&&React.createElement("div",{style:{color:"#f7931a"}},"Price: "+fmtPrice(d.priceRaw)),
+    d.liquidSupply!==undefined&&React.createElement("div",{style:{color:"#38bdf8"}},"Liquid: "+d.liquidSupply.toFixed(2)+"M BTC"),
+    d.emissions!==undefined&&React.createElement("div",{style:{color:"#4ade80"}},"Mined: "+d.emissions.toFixed(1)+" BTC/day"),
+    d.qReserve!==undefined&&React.createElement("div",{style:{color:"#f87171"}},"Withdrawn: "+d.qReserve.toFixed(0)+" BTC/day"),
+    d.gamma!==undefined&&React.createElement("div",{style:{color:"#c084fc"}},"Adoption: "+d.gamma.toFixed(4)),
+    d.Aprime!==undefined&&React.createElement("div",{style:{color:"#f7931a"}},"A': "+d.Aprime.toFixed(2))
+  );
+}
+
+const TABS=[{key:"price",label:"PRICE"},{key:"supply",label:"LIQUID SUPPLY"},{key:"flows",label:"SUPPLY FLOWS"},{key:"adoption",label:"ADOPTION CURVE"},{key:"overlay",label:"PRICE + SUPPLY"}];
+
+function App(){
+  const[D,setD]=useState(20),[rho,setRho]=useState(2.0),[qBase,setQBase]=useState(2000),[alpha,setAlpha]=useState(.10);
+  const[Tstar,setTstar]=useState(14),[Lmin,setLmin]=useState(.05);
+  const[satoshi,setSatoshi]=useState(968000),[lost,setLost]=useState(1570000),[illiquid,setIlliquid]=useState(5760000);
+  const[tab,setTab]=useState("price");
+  const rawLiq=Q_MINED_T0-satoshi-lost-illiquid;
+  const clampLiq=Math.max(1e6,Math.min(16.5e6,rawLiq));
+  const clipped=rawLiq!==clampLiq;
+  const R=useMemo(()=>runSim({D,rho,qBase,alpha,satoshi,lost,illiquid,Tstar,Lmin}),[D,rho,qBase,alpha,satoshi,lost,illiquid,Tstar,Lmin]);
+  const reset=useCallback(()=>{setD(20);setRho(2);setQBase(2000);setAlpha(.1);setTstar(14);setLmin(.05);setSatoshi(968000);setLost(1570000);setIlliquid(5760000)},[]);
+  const maxP=Math.max(...R.priceData.map(d=>d.price));
+  const pDom=maxP>25e6?25e6:'auto';
+  const pTick=v=>{if(v>=1e9)return`$${(v/1e9).toFixed(0)}B`;if(v>=1e6)return`$${(v/1e6).toFixed(0)}M`;if(v>=1e3)return`$${(v/1e3).toFixed(0)}K`;return`$${v}`};
+  const ci=data=>Math.max(1,Math.floor(data.length/7));
+  const tk={fontSize:10,fill:"#5a6b82",fontFamily:mono};
+
+  const renderChart=()=>{
+    if(tab==="price")return React.createElement(LineChart,{data:R.priceData,margin:{top:10,right:16,bottom:16,left:8}},
+      React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1c2740"}),
+      React.createElement(XAxis,{dataKey:"date",tick:tk,interval:ci(R.priceData)}),
+      React.createElement(YAxis,{tickFormatter:pTick,tick:tk,domain:[0,pDom]}),
+      React.createElement(Tooltip,{content:React.createElement(ChartTip)}),
+      React.createElement(ReferenceLine,{y:1e6,stroke:"#22c55e",strokeDasharray:"6 4",strokeWidth:1,label:{value:"$1M",fill:"#22c55e",fontSize:10,position:"insideTopRight"}}),
+      React.createElement(Line,{type:"monotone",dataKey:"price",stroke:"#f7931a",strokeWidth:2.5,dot:false})
+    );
+    if(tab==="supply")return React.createElement(LineChart,{data:R.priceData,margin:{top:10,right:16,bottom:16,left:8}},
+      React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1c2740"}),
+      React.createElement(XAxis,{dataKey:"date",tick:tk,interval:ci(R.priceData)}),
+      React.createElement(YAxis,{tickFormatter:v=>`${v.toFixed(0)}M`,tick:tk,domain:[0,'auto']}),
+      React.createElement(Tooltip,{content:React.createElement(ChartTip)}),
+      React.createElement(ReferenceLine,{y:2,stroke:"#ef4444",strokeDasharray:"6 4",strokeWidth:1.5,label:{value:"~2M hyperbolic threshold",fill:"#ef4444",fontSize:10,position:"insideTopRight"}}),
+      React.createElement(Line,{type:"monotone",dataKey:"liquidSupply",stroke:"#38bdf8",strokeWidth:2.5,dot:false})
+    );
+    if(tab==="flows")return React.createElement(ComposedChart,{data:R.supplyFlowData,margin:{top:10,right:16,bottom:16,left:8}},
+      React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1c2740"}),
+      React.createElement(XAxis,{dataKey:"date",tick:tk,interval:ci(R.supplyFlowData)}),
+      React.createElement(YAxis,{tick:tk,label:{value:"BTC / day",angle:-90,position:"insideLeft",style:{fontSize:10,fill:"#5a6b82"}}}),
+      React.createElement(Tooltip,{content:React.createElement(ChartTip)}),
+      React.createElement(Line,{type:"monotone",dataKey:"emissions",stroke:"#4ade80",strokeWidth:2,dot:false}),
+      React.createElement(Line,{type:"monotone",dataKey:"qReserve",stroke:"#f87171",strokeWidth:2,dot:false}),
+      React.createElement(ReferenceLine,{y:0,stroke:"#5a6b82",strokeWidth:.5})
+    );
+    if(tab==="adoption")return React.createElement(ComposedChart,{data:R.adoptionData,margin:{top:10,right:16,bottom:16,left:8}},
+      React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1c2740"}),
+      React.createElement(XAxis,{dataKey:"date",tick:tk,interval:ci(R.adoptionData)}),
+      React.createElement(YAxis,{yAxisId:"g",tick:tk,domain:[0,1],label:{value:"gamma",angle:-90,position:"insideLeft",style:{fontSize:10,fill:"#5a6b82"}}}),
+      React.createElement(YAxis,{yAxisId:"a",orientation:"right",tick:tk,label:{value:"A'",angle:90,position:"insideRight",style:{fontSize:10,fill:"#5a6b82"}}}),
+      React.createElement(Tooltip,{content:React.createElement(ChartTip)}),
+      React.createElement(Line,{yAxisId:"g",type:"monotone",dataKey:"gamma",stroke:"#c084fc",strokeWidth:2.5,dot:false}),
+      React.createElement(Line,{yAxisId:"a",type:"monotone",dataKey:"Aprime",stroke:"#f7931a",strokeWidth:2,dot:false,strokeDasharray:"6 3"})
+    );
+    return React.createElement(ComposedChart,{data:R.priceData,margin:{top:10,right:16,bottom:16,left:8}},
+      React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1c2740"}),
+      React.createElement(XAxis,{dataKey:"date",tick:tk,interval:ci(R.priceData)}),
+      React.createElement(YAxis,{yAxisId:"p",tickFormatter:pTick,tick:tk,domain:[0,pDom]}),
+      React.createElement(YAxis,{yAxisId:"s",orientation:"right",tickFormatter:v=>`${v.toFixed(0)}M`,tick:tk,domain:[0,'auto']}),
+      React.createElement(Tooltip,{content:React.createElement(ChartTip)}),
+      React.createElement(ReferenceLine,{yAxisId:"s",y:2,stroke:"#ef4444",strokeDasharray:"6 4",strokeWidth:1}),
+      React.createElement(Line,{yAxisId:"p",type:"monotone",dataKey:"price",stroke:"#f7931a",strokeWidth:2.5,dot:false}),
+      React.createElement(Line,{yAxisId:"s",type:"monotone",dataKey:"liquidSupply",stroke:"#38bdf8",strokeWidth:2,dot:false,strokeDasharray:"6 3"})
+    );
+  };
+
+  const legends={
+    price:[["#f7931a","\u2500\u2500 Price (USD)"],["#22c55e","-- $1M reference"]],
+    supply:[["#38bdf8","\u2500\u2500 Liquid supply"],["#ef4444","-- 2M threshold"]],
+    flows:[["#4ade80","\u2500\u2500 Miner production"],["#f87171","\u2500\u2500 Reserve withdrawals"]],
+    adoption:[["#c084fc","\u2500\u2500 Adoption (gamma)"],["#f7931a","-- A' demand shift"]],
+    overlay:[["#f7931a","\u2500\u2500 Price"],["#38bdf8","-- Liquid supply"],["#ef4444","-- 2M threshold"]]
+  };
+
+  return React.createElement("div",{style:{maxWidth:1140,margin:"0 auto",padding:"28px 20px"}},
+    // Header
+    React.createElement("div",{style:{marginBottom:28,display:"flex",alignItems:"flex-start",gap:14}},
+      React.createElement("div",{style:{width:40,height:40,borderRadius:"50%",flexShrink:0,background:"linear-gradient(135deg,#f7931a,#e2720a)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:"#fff",boxShadow:"0 0 24px rgba(247,147,26,.25)",marginTop:2}},"B"),
+      React.createElement("div",null,
+        React.createElement("h1",{style:{fontSize:22,fontWeight:700,margin:"0 0 6px 0",letterSpacing:"-.03em",lineHeight:1.2,fontFamily:"'Playfair Display',Georgia,serif"}},"Bitcoin Supply-Demand Price Model"),
+        React.createElement("p",{style:{fontSize:12.5,color:"#5a6b82",margin:0,lineHeight:1.55,maxWidth:660}},"Epstein-Zin framework for Bitcoin price formation. Adjust parameters to explore how demand growth, time preferences, and withdrawal behavior shape price trajectories from the 4th halving (April 2024) through the 7th (April 2036)."),
+        React.createElement("div",{className:"header-accent"})
+      )
+    ),
+    // Main layout
+    React.createElement("div",{style:{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}},
+      // Controls
+      React.createElement("div",{style:{width:310,flexShrink:0,background:"#0f1520",border:"1px solid #1c2740",borderRadius:10,padding:"20px 18px"}},
+        React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},
+          React.createElement("span",{style:{fontFamily:mono,fontSize:12,fontWeight:700,letterSpacing:".06em"}},"PARAMETERS"),
+          React.createElement("button",{className:"reset-btn",onClick:reset},"RESET ALL")
+        ),
+        React.createElement("div",{className:"section-label"},"INITIAL SUPPLY (20 APR 2024)"),
+        React.createElement("div",{style:{background:"#131b2a",borderRadius:6,padding:"10px 12px",marginBottom:14,border:"1px solid #1c2740"}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,fontFamily:mono}},
+            React.createElement("span",{style:{color:"#5a6b82"}},"Circulating supply"),
+            React.createElement("span",{style:{color:"#e2e8f0",fontWeight:600}},Q_MINED_T0.toLocaleString()+" BTC")
+          )
+        ),
+        React.createElement(Slider,{label:"Satoshi coins",sublabel:"presumed inaccessible",value:satoshi,min:0,max:1100000,step:10000,onChange:setSatoshi,format:v=>`${(v/1e6).toFixed(2)}M`}),
+        React.createElement(Slider,{label:"Lost BTC",sublabel:"permanently lost",value:lost,min:0,max:4000000,step:50000,onChange:setLost,format:v=>`${(v/1e6).toFixed(2)}M`}),
+        React.createElement(Slider,{label:"Illiquid BTC",sublabel:"long-term HODLed",value:illiquid,min:0,max:14000000,step:100000,onChange:setIlliquid,format:v=>`${(v/1e6).toFixed(2)}M`}),
+        // Liquid supply readout
+        React.createElement("div",{style:{background:clipped?"rgba(239,68,68,.1)":"rgba(247,147,26,.12)",borderRadius:6,padding:"10px 12px",marginTop:4,border:`1px solid ${clipped?"rgba(239,68,68,.3)":"rgba(247,147,26,.2)"}`}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,fontFamily:mono}},
+            React.createElement("span",{style:{color:"#5a6b82"}},"Initial liquid supply"),
+            React.createElement("span",{style:{color:clipped?"#f87171":"#f7931a",fontWeight:700}},(clampLiq/1e6).toFixed(2)+"M BTC")
+          ),
+          clipped&&React.createElement("div",{style:{fontSize:10,color:"#f87171",marginTop:4}},"Clamped to ["+(rawLiq<1e6?"1.00M floor":"16.50M ceiling")+"]"),
+          React.createElement("div",{style:{fontSize:9,color:"#5a6b82",marginTop:4}},`= ${(Q_MINED_T0/1e6).toFixed(2)}M - ${(satoshi/1e6).toFixed(2)}M - ${(lost/1e6).toFixed(2)}M - ${(illiquid/1e6).toFixed(2)}M`)
+        ),
+        React.createElement("div",{className:"section-label",style:{marginTop:18}},"ADOPTION CURVE"),
+        React.createElement(Slider,{label:"T*",sublabel:"years to saturation",value:Tstar,min:6,max:16,step:1,onChange:setTstar,format:v=>`${v} yr`}),
+        React.createElement(Slider,{label:"L_min",sublabel:"logistic minimum",value:Lmin,min:.01,max:.08,step:.01,onChange:setLmin,format:v=>v.toFixed(2)}),
+        React.createElement("div",{className:"section-label",style:{marginTop:6}},"DEMAND & PREFERENCES"),
+        React.createElement(Slider,{label:"D",sublabel:"demand multiplier",value:D,min:10,max:100,step:5,onChange:setD}),
+        React.createElement(Slider,{label:"\u03C1",sublabel:"EZ intertemporal subst.",value:rho,min:.5,max:2.5,step:.1,onChange:setRho,format:v=>v.toFixed(1)}),
+        React.createElement("div",{className:"section-label",style:{marginTop:6}},"WITHDRAWAL BEHAVIOR"),
+        React.createElement(Slider,{label:"q_base",sublabel:"daily withdrawals (BTC)",value:qBase,min:1000,max:8000,step:250,onChange:setQBase,format:v=>v.toLocaleString()}),
+        React.createElement(Slider,{label:"\u03B1",sublabel:"withdrawal sensitivity",value:alpha,min:.025,max:.5,step:.025,onChange:setAlpha,format:v=>v.toFixed(3)})
+      ),
+      // Charts area
+      React.createElement("div",{style:{flex:1,minWidth:0}},
+        // Stats row
+        React.createElement("div",{style:{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}},
+          React.createElement(Stat,{label:"Price (Apr 2036)",value:fmtPrice(R.finalPrice)}),
+          React.createElement(Stat,{label:"CAGR (12-yr)",value:`${R.cagr.toFixed(1)}%`}),
+          React.createElement(Stat,{label:"Market Cap",value:fmtMcap(R.finalMcap)}),
+          React.createElement(Stat,{label:"$1M Milestone",value:R.millionDate?fmtDateFull(R.millionDate):"n/a"}),
+          React.createElement(Stat,{label:"Final Liquid",value:`${R.finalLiquid.toFixed(2)}M`,sub:"BTC at Apr 2036"})
+        ),
+        // Tabs
+        React.createElement("div",{style:{marginBottom:14,display:"flex",flexWrap:"wrap"}},
+          TABS.map(t=>React.createElement("button",{key:t.key,className:`tab-btn ${tab===t.key?"active":""}`,onClick:()=>setTab(t.key)},t.label))
+        ),
+        // Chart
+        React.createElement("div",{className:"chart-container",style:{background:"#0f1520",border:"1px solid #1c2740",borderRadius:10,padding:"18px 8px 10px 0"}},
+          React.createElement(ResponsiveContainer,{width:"100%",height:400},renderChart()),
+          React.createElement("div",{style:{display:"flex",gap:20,justifyContent:"center",paddingTop:8,paddingBottom:4}},
+            (legends[tab]||[]).map((l,i)=>React.createElement("span",{key:i,style:{fontSize:10,fontFamily:mono,color:l[0]}},l[1]))
+          )
+        ),
+        // Notes
+        React.createElement("div",{style:{marginTop:16,padding:"14px 18px",background:"#0f1520",border:"1px solid #1c2740",borderRadius:10,fontSize:11.5,color:"#5a6b82",lineHeight:1.65}},
+          React.createElement("div",{style:{fontFamily:mono,fontSize:10,fontWeight:600,color:"#e2e8f0",marginBottom:6,letterSpacing:".06em"}},"MODEL NOTES"),
+          React.createElement("p",{style:{margin:"0 0 6px 0"}},"Deterministic Epstein-Zin supply-demand framework. Price is computed daily as P(t) = A'(t) \u00D7 P\u2080 \u00D7 [(q\u2080 \u2212 illiquid \u2212 satoshi) / q\u2097(t)]^(1/\u03C1), where A'(t) follows a logistic adoption curve scaled by demand multiplier D. Withdrawal sensitivity (\u03B1) throttles reserve accumulation as price appreciates."),
+          React.createElement("p",{style:{margin:"0 0 6px 0"}},"Hyperbolic price trajectories concentrate when liquid supply falls below ~2M BTC with low withdrawal sensitivity. The daily withdrawal rate (q_base) exerts the strongest influence on whether the model enters this regime."),
+          React.createElement("p",{style:{margin:0,fontSize:10.5}},"Rudd, M.A. & Porter, D. (2025). \u201CBitcoin supply, demand, and price dynamics.\u201D Journal of Risk and Financial Management.")
+        )
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
