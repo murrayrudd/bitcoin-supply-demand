@@ -1,1 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitcoin Supply-Demand Price Model</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080d17;color:#e2e8f0;font-family:'IBM Plex Sans',system-ui,sans-serif;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.logo{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#f7931a,#e2720a);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0}
+.main{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.panel{width:260px;flex-shrink:0;background:#0f1520;border:1px solid #1c2740;border-radius:8px;padding:14px 12px}
+.charts{flex:1;min-width:0}
+.sec{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#5a6b82;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid #1c2740}
+.sec:not(:first-of-type){margin-top:12px}
+.srow{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}
+.srow span:last-child{color:#f7931a;font-weight:700;font-family:'JetBrains Mono',monospace}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;background:#1c2740;border-radius:3px;outline:none;cursor:pointer;margin-bottom:12px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#f7931a;cursor:pointer;box-shadow:0 0 8px rgba(247,147,26,.35)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#f7931a;cursor:pointer;border:none}
+.liq{background:rgba(247,147,26,.1);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:10px;font-family:'JetBrains Mono',monospace;display:flex;justify-content:space-between}
+.stats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.stat{background:#0f1520;border:1px solid #1c2740;border-radius:5px;padding:8px 10px;flex:1;min-width:90}
+.stat label{font-size:8px;color:#5a6b82;text-transform:uppercase;font-family:'JetBrains Mono',monospace;display:block}
+.stat span{font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;display:block;margin-top:2px}
+.tabs{display:flex;margin-bottom:8px;flex-wrap:wrap}
+.tabs button{padding:6px 12px;border:1px solid #1c2740;background:transparent;color:#5a6b82;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;border-right:none}
+.tabs button:last-child{border-right:1px solid #1c2740;border-radius:0 5px 5px 0}
+.tabs button:first-child{border-radius:5px 0 0 5px}
+.tabs button.a{background:rgba(247,147,26,.12);color:#f7931a;border-color:#f7931a}
+.cbox{background:#0f1520;border:1px solid #1c2740;border-radius:8px;padding:12px}
+canvas{width:100%!important;max-height:380px}
+.note{margin-top:10px;padding:10px 12px;background:#0f1520;border:1px solid #1c2740;border-radius:6px;font-size:10px;color:#5a6b82}
+.rst{padding:3px 8px;background:none;border:1px solid #1c2740;color:#5a6b82;font-family:'JetBrains Mono',monospace;font-size:9px;border-radius:3px;cursor:pointer}
+.rst:hover{border-color:#f7931a;color:#f7931a}
+@media(max-width:700px){.panel{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="header">
+<div class="logo">B</div>
+<div><h1 style="font-size:18px;font-weight:700">Bitcoin Supply-Demand Price Model</h1>
+<p style="font-size:11px;color:#5a6b82;margin-top:3px">Rudd & Porter (2025) &mdash; Epstein-Zin framework, Apr 2024 to Apr 2036</p></div>
+</div>
+<div class="main">
+<div class="panel" id="controls"></div>
+<div class="charts">
+<div class="stats" id="stats"></div>
+<div class="tabs" id="tabs"></div>
+<div class="cbox"><canvas id="chart"></canvas></div>
+<div class="note">Rudd, M.A. &amp; Porter, D. (2025). &ldquo;Bitcoin supply, demand, and price dynamics.&rdquo; <em>J. Risk &amp; Financial Management</em>, 18(2), 66.</div>
+</div>
+</div>
+</div>
+<script>
+var P0=64858,Q0=19687500,TEND=4379,BPD=144,T0=new Date(2024,3,20);
+var HV=[{d:0,r:3.125},{d:1458,r:1.5625},{d:2917,r:0.78125},{d:4375,r:0.390625}];
+function em(i){var r=3.125;for(var j=0;j<HV.length;j++)if(i>=HV[j].d)r=HV[j].r;return r*BPD}
+function fd(i){var d=new Date(T0);d.setDate(d.getDate()+i);return d.toLocaleDateString("en-US",{month:"short",year:"numeric"})}
+function fdf(i){var d=new Date(T0);d.setDate(d.getDate()+i);return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+function fp(v){return v>=1e6?"$"+(v/1e6).toFixed(2)+"M":v>=1e3?"$"+(v/1e3).toFixed(0)+"K":"$"+v.toFixed(0)}
+function fm(v){return v>=1e15?"$"+(v/1e15).toFixed(1)+"Q":v>=1e12?"$"+(v/1e12).toFixed(1)+"T":v>=1e9?"$"+(v/1e9).toFixed(1)+"B":"$"+v.toFixed(0)}
+
+var params={D:20,rho:2,qB:2000,al:.1,Ts:14,Lm:.05,sat:968000,lost:1570000,ilq:5760000};
+var tab=0,chart=null;
+
+function run(){
+  var D=params.D,rho=params.rho,qB=params.qB,al=params.al,sat=params.sat,lost=params.lost,ilq=params.ilq,Ts=params.Ts,Lm=params.Lm;
+  var Lx=1-Lm,td=Ts*365,ti=td/2,r=(Math.log(1/Lm-1)-Math.log(1/Lx-1))/td;
+  var liq=Math.max(1e6,Math.min(16.5e6,Q0-sat-ilq-lost)),db=Q0-ilq-sat;
+  var p=P0,pp=P0,md=null,cm=0;
+  var dates=[],prices=[],lqs=[],evs=[],qRs=[],gammas=[],aprimes=[];
+  for(var t=0;t<=TEND;t++){
+    var g=1/(1+Math.exp(-r*(t+1-ti))),A=1+((D-1)/(Lx-Lm))*(g-Lm);
+    if(liq>100)p=A*P0*Math.pow(db/liq,1/rho);
+    if(!md&&p>=1e6)md=t;
+    var ev=em(t),qR=0;if(t>0)qR=qB/(1+al*Math.max(0,pp/P0-1));
+    cm+=ev;liq=Math.max(0,liq+ev-qR);pp=p;
+    if(t%20===0||t===TEND){dates.push(fd(t));prices.push(Math.min(p,25e6));lqs.push(liq/1e6);evs.push(ev);qRs.push(qR);gammas.push(g);aprimes.push(A)}
+  }
+  var fp2=p,fl=liq/1e6,mc=p*(Q0+cm),cagr=(Math.pow(p/P0,1/(TEND/365))-1)*100;
+  return{dates:dates,prices:prices,lqs:lqs,evs:evs,qRs:qRs,gammas:gammas,aprimes:aprimes,fp:fp2,fl:fl,mc:mc,cagr:cagr,md:md};
+}
+
+function slider(id,label,val,mn,mx,st,fmt){
+  return '<div class="srow"><span>'+label+'</span><span id="v_'+id+'">'+(fmt?fmt(val):val)+'</span></div><input type="range" id="s_'+id+'" min="'+mn+'" max="'+mx+'" step="'+st+'" value="'+val+'">';
+}
+
+function buildControls(){
+  var p=params;var liq=Math.max(1e6,Math.min(16.5e6,Q0-p.sat-p.lost-p.ilq));
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:700">PARAMETERS</span><button class="rst" onclick="resetAll()">RESET</button></div>';
+  h+='<div class="sec">SUPPLY</div>';
+  h+=slider("sat","Satoshi",p.sat,0,1100000,10000,function(v){return(v/1e6).toFixed(2)+"M"});
+  h+=slider("lost","Lost",p.lost,0,4e6,50000,function(v){return(v/1e6).toFixed(2)+"M"});
+  h+=slider("ilq","Illiquid",p.ilq,0,14e6,1e5,function(v){return(v/1e6).toFixed(2)+"M"});
+  h+='<div class="liq"><span style="color:#5a6b82">Liquid</span><span style="color:#f7931a;font-weight:700" id="liqVal">'+(liq/1e6).toFixed(2)+'M</span></div>';
+  h+='<div class="sec">ADOPTION</div>';
+  h+=slider("Ts","T*",p.Ts,6,16,1,function(v){return v+"yr"});
+  h+=slider("Lm","L_min",p.Lm,.01,.08,.01,function(v){return v.toFixed(2)});
+  h+='<div class="sec">DEMAND</div>';
+  h+=slider("D","D",p.D,10,100,5);
+  h+=slider("rho","\u03C1 (rho)",p.rho,.5,2.5,.1,function(v){return parseFloat(v).toFixed(1)});
+  h+='<div class="sec">WITHDRAWALS</div>';
+  h+=slider("qB","q_base",p.qB,1000,8000,250,function(v){return parseInt(v).toLocaleString()});
+  h+=slider("al","\u03B1 (alpha)",p.al,.025,.5,.025,function(v){return parseFloat(v).toFixed(3)});
+  document.getElementById("controls").innerHTML=h;
+  var ids=["sat","lost","ilq","Ts","Lm","D","rho","qB","al"];
+  var fmts=[function(v){return(v/1e6).toFixed(2)+"M"},function(v){return(v/1e6).toFixed(2)+"M"},function(v){return(v/1e6).toFixed(2)+"M"},function(v){return v+"yr"},function(v){return parseFloat(v).toFixed(2)},null,function(v){return parseFloat(v).toFixed(1)},function(v){return parseInt(v).toLocaleString()},function(v){return parseFloat(v).toFixed(3)}];
+  ids.forEach(function(id,i){
+    document.getElementById("s_"+id).addEventListener("input",function(ev){
+      var v=parseFloat(ev.target.value);params[id]=v;
+      document.getElementById("v_"+id).textContent=fmts[i]?fmts[i](v):v;
+      var liq2=Math.max(1e6,Math.min(16.5e6,Q0-params.sat-params.lost-params.ilq));
+      document.getElementById("liqVal").textContent=(liq2/1e6).toFixed(2)+"M";
+      update();
+    });
+  });
+}
+
+function buildTabs(){
+  var names=["PRICE","SUPPLY","FLOWS","ADOPTION","OVERLAY"];
+  var h="";names.forEach(function(n,i){h+='<button class="'+(tab===i?"a":"")+'" onclick="setTab('+i+')">'+n+'</button>'});
+  document.getElementById("tabs").innerHTML=h;
+}
+
+function setTab(t){tab=t;buildTabs();update()}
+function resetAll(){params={D:20,rho:2,qB:2000,al:.1,Ts:14,Lm:.05,sat:968000,lost:1570000,ilq:5760000};tab=0;buildControls();buildTabs();update()}
+
+function update(){
+  var R=run();
+  var st=document.getElementById("stats");
+  var sv=[["Price 2036",fp(R.fp)],["CAGR",R.cagr.toFixed(1)+"%"],["Mkt Cap",fm(R.mc)],["$1M Date",R.md?fdf(R.md):"n/a"],["Liquid",R.fl.toFixed(2)+"M"]];
+  st.innerHTML=sv.map(function(s){return'<div class="stat"><label>'+s[0]+'</label><span>'+s[1]+'</span></div>'}).join("");
+
+  if(chart)chart.destroy();
+  var ctx=document.getElementById("chart").getContext("2d");
+  var cfg={type:"line",options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},interaction:{mode:"index",intersect:false},plugins:{legend:{display:true,labels:{color:"#5a6b82",font:{family:"'JetBrains Mono',monospace",size:10}}}},scales:{}},data:{labels:R.dates,datasets:[]}};
+
+  if(tab===0){
+    cfg.data.datasets=[{label:"Price (USD)",data:R.prices,borderColor:"#f7931a",borderWidth:2,pointRadius:0,tension:.3}];
+    cfg.options.scales={y:{ticks:{color:"#5a6b82",callback:function(v){return v>=1e6?"$"+(v/1e6).toFixed(0)+"M":"$"+(v/1e3).toFixed(0)+"K"}},grid:{color:"#1c2740"}},x:{ticks:{color:"#5a6b82",maxTicksLimit:8},grid:{color:"#1c2740"}}};
+  }else if(tab===1){
+    cfg.data.datasets=[{label:"Liquid Supply (M BTC)",data:R.lqs,borderColor:"#38bdf8",borderWidth:2,pointRadius:0,tension:.3}];
+    cfg.options.scales={y:{ticks:{color:"#5a6b82",callback:function(v){return v.toFixed(0)+"M"}},grid:{color:"#1c2740"}},x:{ticks:{color:"#5a6b82",maxTicksLimit:8},grid:{color:"#1c2740"}}};
+    cfg.options.plugins.annotation={annotations:{threshold:{type:"line",yMin:2,yMax:2,borderColor:"#ef4444",borderWidth:1.5,borderDash:[6,4],label:{display:true,content:"~2M threshold",color:"#ef4444",font:{size:10}}}}};
+  }else if(tab===2){
+    cfg.data.datasets=[{label:"Miner production (BTC/day)",data:R.evs,borderColor:"#4ade80",borderWidth:2,pointRadius:0,tension:.1},{label:"Reserve withdrawals (BTC/day)",data:R.qRs,borderColor:"#f87171",borderWidth:2,pointRadius:0,tension:.3}];
+    cfg.options.scales={y:{ticks:{color:"#5a6b82"},grid:{color:"#1c2740"}},x:{ticks:{color:"#5a6b82",maxTicksLimit:8},grid:{color:"#1c2740"}}};
+  }else if(tab===3){
+    cfg.data.datasets=[{label:"Gamma (adoption)",data:R.gammas,borderColor:"#c084fc",borderWidth:2,pointRadius:0,tension:.3,yAxisID:"y"},{label:"A' (demand shift)",data:R.aprimes,borderColor:"#f7931a",borderWidth:2,pointRadius:0,tension:.3,borderDash:[6,3],yAxisID:"y1"}];
+    cfg.options.scales={y:{position:"left",min:0,max:1,ticks:{color:"#5a6b82"},grid:{color:"#1c2740"}},y1:{position:"right",ticks:{color:"#5a6b82"},grid:{drawOnChartArea:false}},x:{ticks:{color:"#5a6b82",maxTicksLimit:8},grid:{color:"#1c2740"}}};
+  }else{
+    cfg.data.datasets=[{label:"Price (USD)",data:R.prices,borderColor:"#f7931a",borderWidth:2,pointRadius:0,tension:.3,yAxisID:"y"},{label:"Liquid Supply (M)",data:R.lqs,borderColor:"#38bdf8",borderWidth:2,pointRadius:0,tension:.3,borderDash:[6,3],yAxisID:"y1"}];
+    cfg.options.scales={y:{position:"left",ticks:{color:"#5a6b82",callback:function(v){return v>=1e6?"$"+(v/1e6).toFixed(0)+"M":"$"+(v/1e3).toFixed(0)+"K"}},grid:{color:"#1c2740"}},y1:{position:"right",ticks:{color:"#5a6b82",callback:function(v){return v.toFixed(0)+"M"}},grid:{drawOnChartArea:false}},x:{ticks:{color:"#5a6b82",maxTicksLimit:8},grid:{color:"#1c2740"}}};
+  }
+
+  chart=new Chart(ctx,cfg);
+}
+
+buildControls();buildTabs();update();
+</script>
+</body>
+</html>
 
