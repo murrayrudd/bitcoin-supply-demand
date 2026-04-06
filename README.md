@@ -69,7 +69,7 @@ The model is a single `index.html` file. To run locally, download and open in an
 1. Fork or clone this repository
 2. Go to **Settings > Pages**
 3. Set source to **Deploy from a branch**, branch **main**, folder **/ (root)**
-4. The model will be live at `https://YOURUSERNAME.github.io/bitcoin-model/`
+4. The model will be live at `https://YOURUSERNAME.github.io/bitcoin-supply-demand/`
 
 ## Dependencies
 
