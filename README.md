@@ -14,7 +14,7 @@ The model computes daily equilibrium prices by intersecting Bitcoin's perfectly 
 
 This tool implements the framework described in:
 
-- **Rudd, M.A. & Porter, D. (2025).** "A supply and demand framework for Bitcoin price forecasting." *Journal of Risk and Financial Management*, 18(10), 570. [(ttps://doi.org/10.3390/jrfm18100570]
+- **Rudd, M.A. & Porter, D. (2025).** "A supply and demand framework for Bitcoin price forecasting." *Journal of Risk and Financial Management*, 18(10), 570. [(https://doi.org/10.3390/jrfm18100570]
 
 The model builds on earlier work establishing the supply-demand framework:
 
