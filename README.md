@@ -10,6 +10,8 @@ The model computes daily equilibrium prices by intersecting Bitcoin's perfectly 
 
 **Live model:** [https://murrayrudd.github.io/bitcoin-supply-demand/](https://murrayrudd.github.io/bitcoin-supply-demand/)
 
+Background and blog posts on model available at: https://www.murrayrudd.pro/
+
 ## Research basis
 
 This tool implements the framework described in:
